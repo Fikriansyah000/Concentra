@@ -115,7 +115,7 @@ export class SessionManager {
     return session;
   }
 
-  static async handleFocusUpdate(score: number, isDistracted: boolean, headDirection: string) {
+  static async handleFocusUpdate(score: number, isDistracted: boolean, headDirection: string, isEyesClosed?: boolean) {
     const session = await extensionStorage.getActiveSession();
     if (session.status !== 'active') return;
 
@@ -132,7 +132,7 @@ export class SessionManager {
       if (tabs[0]?.id) {
         chrome.tabs.sendMessage(tabs[0].id, {
           type: 'LIVE_FOCUS_METRIC',
-          payload: { score, isDistracted, headDirection },
+          payload: { score, isDistracted, headDirection, isEyesClosed },
         }).catch(() => {});
       }
     });

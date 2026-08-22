@@ -52,7 +52,8 @@ chrome.runtime.onMessage.addListener((message: BaseExtensionMessage, _sender, se
             await SessionManager.handleFocusUpdate(
               message.payload.focusScore,
               message.payload.isDistracted,
-              message.payload.headDirection
+              message.payload.headDirection,
+              message.payload.isEyesClosed
             );
           }
           sendResponse({ success: true });
