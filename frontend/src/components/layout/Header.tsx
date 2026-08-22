@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Menu, Bell, User as UserIcon, LogOut } from 'lucide-react';
 import { useUIStore } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -30,11 +31,13 @@ export const Header: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-3 pl-3 border-l border-dark-border">
-          <Avatar src={user?.avatar_url} name={user?.full_name || 'User'} size="sm" />
-          <div className="hidden sm:block text-left">
-            <p className="text-xs font-semibold text-dark-text">{user?.full_name || 'Pengguna'}</p>
-            <p className="text-[10px] text-dark-muted">{user?.email}</p>
-          </div>
+          <Link to="/profile" className="flex items-center gap-3 group">
+            <Avatar src={user?.avatar_url} name={user?.full_name || 'User'} size="sm" className="group-hover:ring-2 group-hover:ring-brand-400 transition" />
+            <div className="hidden sm:block text-left">
+              <p className="text-xs font-semibold text-dark-text group-hover:text-brand-300 transition">{user?.full_name || 'Pengguna'}</p>
+              <p className="text-[10px] text-dark-muted">{user?.email}</p>
+            </div>
+          </Link>
           <button
             onClick={() => logout()}
             className="p-1.5 rounded-lg text-dark-muted hover:text-rose-400 hover:bg-slate-800 transition ml-1"

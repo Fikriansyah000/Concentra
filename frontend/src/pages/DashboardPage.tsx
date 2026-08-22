@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Clock,
   CheckCircle,
@@ -180,9 +181,9 @@ export const DashboardPage: React.FC = () => {
         <Card className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-lg text-white">Sesi Terakhir</h3>
-            <a href="/sessions" className="text-xs text-brand-400 hover:underline flex items-center gap-1 font-medium">
+            <Link to="/history" className="text-xs text-brand-400 hover:underline flex items-center gap-1 font-medium">
               Lihat semua <ExternalLink className="w-3 h-3" />
-            </a>
+            </Link>
           </div>
 
           <div className="space-y-3">
