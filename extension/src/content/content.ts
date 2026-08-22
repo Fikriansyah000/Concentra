@@ -6,7 +6,7 @@ import { FocusOverlay } from './overlay/FocusOverlay';
 import { BaseExtensionMessage } from '../shared/types';
 import { extensionStorage } from '../shared/storage';
 
-console.log('[Concentra Content Script] Initialized on:', window.location.href);
+console.log('[Concentra Content Script] Injected on:', window.location.href);
 
 const cameraManager = new CameraManager();
 const faceDetector = new FaceDetector();
@@ -28,6 +28,9 @@ async function startTracking() {
 
     // 1. Start Webcam
     const videoEl = await cameraManager.startCamera(640, 480);
+    if (videoEl.srcObject instanceof MediaStream) {
+      focusOverlay.attachStream(videoEl.srcObject);
+    }
 
     // 2. Initialize MediaPipe
     if (!faceDetector.isReady()) {
@@ -44,8 +47,8 @@ async function startTracking() {
       const headPose = HeadPoseEstimator.estimatePose(landmarks || []);
       const metrics = focusCalculator.calculate(faceDetected, headPose);
 
-      // Update Overlay HUD (video canvas, score badge, direction)
-      focusOverlay?.updateMetrics(metrics, videoEl, landmarks);
+      // Update Overlay HUD on webpage
+      focusOverlay?.updateMetrics(metrics, landmarks);
 
       // Send update to background SW once every 1 second
       const now = performance.now();
@@ -60,13 +63,11 @@ async function startTracking() {
             isDistracted: metrics.isDistracted,
             timestamp: new Date().toISOString(),
           },
-        }).catch(() => {
-          // Background script might be sleeping
-        });
+        }).catch(() => {});
       }
     });
 
-    console.log('[Concentra Content Script] Tracking started');
+    console.log('[Concentra Content Script] Tracking started on page');
   } catch (error: any) {
     console.error('[Concentra Content Script] Error starting camera/detection:', error);
     isSessionActive = false;
@@ -136,7 +137,7 @@ chrome.runtime.onMessage.addListener((message: BaseExtensionMessage, _sender, se
   try {
     const active = await extensionStorage.getActiveSession();
     if (active && active.status === 'active') {
-      console.log('[Concentra Content Script] Found active session in storage, resuming camera...');
+      console.log('[Concentra Content Script] Found active session in storage, starting camera on page...');
       startTracking();
     }
   } catch (e) {

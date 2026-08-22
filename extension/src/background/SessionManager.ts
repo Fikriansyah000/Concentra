@@ -42,7 +42,7 @@ export class SessionManager {
     await extensionStorage.setActiveSession(sessionState);
     this.startTimer();
     this.updateExtensionBadge('ON', '#10b981'); // Emerald
-    this.broadcastToTabs({ type: 'START_SESSION', payload: sessionState });
+    await this.broadcastToTabs({ type: 'START_SESSION', payload: sessionState });
 
     return sessionState;
   }
@@ -62,7 +62,7 @@ export class SessionManager {
     await extensionStorage.setActiveSession(session);
     this.stopTimer();
     this.updateExtensionBadge('PAUSE', '#f59e0b'); // Amber
-    this.broadcastToTabs({ type: 'PAUSE_SESSION', payload: session });
+    await this.broadcastToTabs({ type: 'PAUSE_SESSION', payload: session });
 
     return session;
   }
@@ -81,7 +81,7 @@ export class SessionManager {
     await extensionStorage.setActiveSession(session);
     this.startTimer();
     this.updateExtensionBadge('ON', '#10b981');
-    this.broadcastToTabs({ type: 'RESUME_SESSION', payload: session });
+    await this.broadcastToTabs({ type: 'RESUME_SESSION', payload: session });
 
     return session;
   }
@@ -101,7 +101,7 @@ export class SessionManager {
     session.status = 'completed';
     await extensionStorage.setActiveSession(session);
     this.updateExtensionBadge('', '');
-    this.broadcastToTabs({ type: 'STOP_SESSION', payload: session });
+    await this.broadcastToTabs({ type: 'STOP_SESSION', payload: session });
 
     return session;
   }
@@ -120,11 +120,19 @@ export class SessionManager {
     await extensionStorage.setActiveSession(session);
   }
 
-  private static broadcastToTabs(message: any) {
+  private static async broadcastToTabs(message: any) {
     try {
       chrome.tabs.query({}, (tabs) => {
-        tabs.forEach((tab) => {
-          if (tab.id) {
+        tabs.forEach(async (tab) => {
+          if (tab.id && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
+            try {
+              // Ensure content script is present
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['content.js'],
+              }).catch(() => {});
+            } catch {}
+
             chrome.tabs.sendMessage(tab.id, message).catch(() => {});
           }
         });

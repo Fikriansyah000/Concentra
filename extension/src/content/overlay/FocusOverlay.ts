@@ -3,6 +3,7 @@ import { Landmark3D } from '../modules/HeadPoseEstimator';
 
 export class FocusOverlay {
   private container: HTMLElement | null = null;
+  private videoEl: HTMLVideoElement | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
   private scoreEl: HTMLElement | null = null;
@@ -26,14 +27,15 @@ export class FocusOverlay {
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
           <div style="display: flex; align-items: center; gap: 6px;">
             <div style="width: 16px; height: 16px; border-radius: 4px; background: linear-gradient(135deg, #6366f1, #818cf8); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 800; color: white;">C</div>
-            <span style="font-size: 11px; font-weight: 700; color: #f8fafc;">Concentra HUD</span>
+            <span style="font-size: 11px; font-weight: 700; color: #f8fafc;">Concentra AI HUD</span>
           </div>
           <button id="concentra-minimize-btn" class="concentra-min-btn" title="Kecilkan">_</button>
         </div>
 
-        <div class="concentra-video-wrapper">
-          <canvas id="concentra-preview-canvas" class="concentra-canvas" width="220" height="120"></canvas>
-          <div id="concentra-status-dot" style="position: absolute; top: 6px; left: 6px; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></div>
+        <div class="concentra-video-wrapper" style="position: relative; width: 100%; height: 120px; border-radius: 10px; overflow: hidden; background: #020617; margin-bottom: 10px; border: 1px solid rgba(255, 255, 255, 0.1);">
+          <video id="concentra-hud-video" playsinline muted autoplay style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); position: absolute; inset: 0;"></video>
+          <canvas id="concentra-preview-canvas" class="concentra-canvas" width="220" height="120" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); pointer-events: none;"></canvas>
+          <div id="concentra-status-dot" style="position: absolute; top: 6px; left: 6px; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981; z-index: 10;"></div>
         </div>
 
         <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -45,7 +47,7 @@ export class FocusOverlay {
       </div>
 
       <!-- Minimized Floating Pill -->
-      <div id="concentra-mini-pill" style="display: none; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 9999px; padding: 6px 14px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); cursor: pointer; align-items: center; gap: 8px;">
+      <div id="concentra-mini-pill" style="display: none; background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 9999px; padding: 6px 14px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); cursor: pointer; align-items: center; gap: 8px;">
         <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
         <span id="concentra-mini-score" style="font-size: 11px; font-weight: 800; color: #f8fafc;">100% Fokus</span>
       </div>
@@ -55,6 +57,7 @@ export class FocusOverlay {
 
     this.cardEl = document.getElementById('concentra-card');
     this.miniPillEl = document.getElementById('concentra-mini-pill');
+    this.videoEl = document.getElementById('concentra-hud-video') as HTMLVideoElement;
     this.canvas = document.getElementById('concentra-preview-canvas') as HTMLCanvasElement;
     this.ctx = this.canvas?.getContext('2d') || null;
     this.scoreEl = document.getElementById('concentra-score-text');
@@ -74,66 +77,57 @@ export class FocusOverlay {
     style.id = 'concentra-hud-styles';
     style.textContent = `
       #concentra-hud-container {
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        z-index: 2147483647;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        user-select: none;
+        position: fixed !important;
+        bottom: 24px !important;
+        right: 24px !important;
+        z-index: 2147483647 !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+        user-select: none !important;
       }
       .concentra-hud-card {
-        background: rgba(15, 23, 42, 0.92);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(99, 102, 241, 0.3);
-        border-radius: 16px;
-        padding: 12px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
-        color: #f8fafc;
-        width: 220px;
-      }
-      .concentra-video-wrapper {
-        position: relative;
-        width: 100%;
-        height: 120px;
-        border-radius: 10px;
-        overflow: hidden;
-        background: #020617;
-        margin-bottom: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-      }
-      .concentra-canvas {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        transform: scaleX(-1);
+        background: rgba(15, 23, 42, 0.94) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border: 1px solid rgba(99, 102, 241, 0.35) !important;
+        border-radius: 16px !important;
+        padding: 12px !important;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6) !important;
+        color: #f8fafc !important;
+        width: 220px !important;
       }
       .concentra-badge-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 3px 8px;
-        border-radius: 9999px;
-        font-size: 11px;
-        font-weight: 700;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        padding: 3px 8px !important;
+        border-radius: 9999px !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
       }
       .concentra-min-btn {
-        background: transparent;
-        border: none;
-        color: #94a3b8;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: bold;
-        line-height: 1;
-        padding: 2px 6px;
-        border-radius: 4px;
+        background: transparent !important;
+        border: none !important;
+        color: #94a3b8 !important;
+        cursor: pointer !important;
+        font-size: 14px !important;
+        font-weight: bold !important;
+        line-height: 1 !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
       }
       .concentra-min-btn:hover {
-        color: #f8fafc;
-        background: rgba(255, 255, 255, 0.1);
+        color: #f8fafc !important;
+        background: rgba(255, 255, 255, 0.1) !important;
       }
     `;
     document.head.appendChild(style);
+  }
+
+  attachStream(stream: MediaStream) {
+    if (this.videoEl && !this.videoEl.srcObject) {
+      this.videoEl.srcObject = stream;
+      this.videoEl.play().catch(() => {});
+    }
   }
 
   show() {
@@ -159,16 +153,15 @@ export class FocusOverlay {
     }
   }
 
-  updateMetrics(metrics: FocusMetrics, videoElement?: HTMLVideoElement, landmarks?: Landmark3D[] | null) {
+  updateMetrics(metrics: FocusMetrics, landmarks?: Landmark3D[] | null) {
     if (!this.container) return;
 
-    // 1. Draw video frame & landmark points on canvas
-    if (this.ctx && this.canvas && videoElement && videoElement.readyState >= 2) {
-      this.ctx.drawImage(videoElement, 0, 0, this.canvas.width, this.canvas.height);
+    // Draw landmark points on overlay canvas
+    if (this.ctx && this.canvas) {
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
       if (landmarks && landmarks.length > 0) {
-        this.ctx.fillStyle = metrics.isDistracted ? '#ef4444' : '#6366f1';
-        // Draw key landmark dots (Nose tip, eyes, mouth)
+        this.ctx.fillStyle = metrics.isDistracted ? '#ef4444' : '#818cf8';
         [1, 33, 263, 61, 291, 152].forEach(idx => {
           const pt = landmarks[idx];
           if (pt) {
@@ -182,7 +175,7 @@ export class FocusOverlay {
       }
     }
 
-    // 2. Update Scores & Colors
+    // Update Scores & Colors
     if (this.scoreEl) {
       this.scoreEl.textContent = `${metrics.smoothedScore}%`;
     }
@@ -214,7 +207,7 @@ export class FocusOverlay {
       }
     }
 
-    // 3. Direction label
+    // Direction label
     if (this.directionEl) {
       if (!metrics.faceDetected) {
         this.directionEl.textContent = 'Wajah Hilang';
