@@ -14,11 +14,10 @@ export default defineConfig({
         permission: resolve(__dirname, 'permission.html'),
         offscreen: resolve(__dirname, 'offscreen.html'),
         background: resolve(__dirname, 'src/background/background.ts'),
-        content: resolve(__dirname, 'src/content/content.ts'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          if (chunkInfo.name === 'background' || chunkInfo.name === 'content') {
+          if (chunkInfo.name === 'background') {
             return '[name].js';
           }
           return 'assets/[name]-[hash].js';
