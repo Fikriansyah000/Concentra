@@ -1,22 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FaceDetector } from '../../content/modules/FaceDetector';
-import { HeadPoseEstimator, HeadDirection, Landmark3D } from '../../content/modules/HeadPoseEstimator';
+import { HeadPoseEstimator, HeadDirection, Landmark3D, HeadPoseResult } from '../../content/modules/HeadPoseEstimator';
 import { FocusCalculator, FocusMetrics } from '../../content/modules/FocusCalculator';
-import { Camera, CameraOff, Loader2, KeyRound, Sparkles } from 'lucide-react';
+import { Camera, CameraOff, Loader2, KeyRound, Sparkles, Eye } from 'lucide-react';
 
 interface CameraPreviewProps {
   isActive: boolean;
   onMetricsUpdate: (metrics: FocusMetrics) => void;
 }
 
-// MediaPipe landmark connection indices for wireframe rendering
+// MediaPipe landmark connection indices
 const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
-const LEFT_EYE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246, 33];
-const RIGHT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398, 362];
+const LEFT_EYE_CONTOUR = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246, 33];
+const RIGHT_EYE_CONTOUR = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398, 362];
 const LEFT_EYEBROW = [70, 63, 105, 66, 107];
 const RIGHT_EYEBROW = [336, 296, 334, 293, 300];
 const NOSE_BRIDGE = [168, 6, 197, 195, 5, 4, 1, 19, 94, 2];
 const LIPS = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61];
+
+// Iris / Eyeball Landmarks
+const LEFT_IRIS_RING = [469, 470, 471, 472, 469];
+const RIGHT_IRIS_RING = [474, 475, 476, 477, 474];
 
 function drawPath(ctx: CanvasRenderingContext2D, landmarks: Landmark3D[], indices: number[], width: number, height: number, close: boolean = false) {
   if (indices.length < 2) return;
@@ -38,45 +42,105 @@ function drawPath(ctx: CanvasRenderingContext2D, landmarks: Landmark3D[], indice
   ctx.stroke();
 }
 
-function drawFaceMesh(
+function drawFaceMeshAndEyes(
   ctx: CanvasRenderingContext2D,
   landmarks: Landmark3D[],
   width: number,
   height: number,
   isDistracted: boolean,
-  direction: HeadDirection
+  headPose: HeadPoseResult
 ) {
   ctx.save();
 
   const mainColor = isDistracted ? '#f87171' : '#818cf8';
   const glowColor = isDistracted ? '#ef4444' : '#6366f1';
-  const accentColor = isDistracted ? '#fca5a5' : '#38bdf8';
+  const eyeLineColor = isDistracted ? '#fca5a5' : '#38bdf8';
+  const irisGlowColor = isDistracted ? '#ef4444' : '#00f0ff';
 
   // 1. Draw Facial Contours & Wireframe Mesh Lines
   ctx.strokeStyle = mainColor;
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.2;
   ctx.shadowColor = glowColor;
-  ctx.shadowBlur = 6;
+  ctx.shadowBlur = 4;
 
   // Face Oval Outline
   drawPath(ctx, landmarks, FACE_OVAL, width, height, true);
 
-  // Eyes & Eyebrows
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 1.2;
-  drawPath(ctx, landmarks, LEFT_EYE, width, height, true);
-  drawPath(ctx, landmarks, RIGHT_EYE, width, height, true);
+  // Eyebrows, Nose Bridge, Lips
   drawPath(ctx, landmarks, LEFT_EYEBROW, width, height, false);
   drawPath(ctx, landmarks, RIGHT_EYEBROW, width, height, false);
-
-  // Nose Bridge & Lips
-  ctx.strokeStyle = mainColor;
-  ctx.lineWidth = 1.2;
   drawPath(ctx, landmarks, NOSE_BRIDGE, width, height, false);
   drawPath(ctx, landmarks, LIPS, width, height, true);
 
-  // 2. Central Alignment Crosshair (Forehead to Chin & Cheek to Cheek)
-  ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
+  // 2. DETAILED EYE CONTOURS (Upper & Lower Eyelids)
+  ctx.strokeStyle = eyeLineColor;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = irisGlowColor;
+  ctx.shadowBlur = 6;
+  drawPath(ctx, landmarks, LEFT_EYE_CONTOUR, width, height, true);
+  drawPath(ctx, landmarks, RIGHT_EYE_CONTOUR, width, height, true);
+
+  // 3. DETAILED IRIS & EYEBALL TRACKING (Bola Mata)
+  if (landmarks.length >= 478) {
+    // Glowing Iris Ring (Left Eye)
+    ctx.strokeStyle = irisGlowColor;
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = irisGlowColor;
+    ctx.shadowBlur = 8;
+    drawPath(ctx, landmarks, LEFT_IRIS_RING, width, height, true);
+    drawPath(ctx, landmarks, RIGHT_IRIS_RING, width, height, true);
+
+    const leftIrisCenter = landmarks[468];
+    const rightIrisCenter = landmarks[473];
+
+    // Left Pupil Center Dot
+    if (leftIrisCenter) {
+      const lx = leftIrisCenter.x * width;
+      const ly = leftIrisCenter.y * height;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(lx, ly, 2, 0, 2 * Math.PI);
+      ctx.fill();
+
+      // Eye Gaze Sight Ray / Laser Vector
+      const gazeX = (headPose.eyeGaze?.gazeOffsetX || 0) * 15;
+      const gazeY = (headPose.eyeGaze?.gazeOffsetY || 0) * 12;
+
+      ctx.strokeStyle = isDistracted ? '#ef4444' : '#10b981';
+      ctx.lineWidth = 1.6;
+      ctx.shadowColor = isDistracted ? '#ef4444' : '#10b981';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(lx + gazeX, ly + gazeY);
+      ctx.stroke();
+    }
+
+    // Right Pupil Center Dot
+    if (rightIrisCenter) {
+      const rx = rightIrisCenter.x * width;
+      const ry = rightIrisCenter.y * height;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(rx, ry, 2, 0, 2 * Math.PI);
+      ctx.fill();
+
+      const gazeX = (headPose.eyeGaze?.gazeOffsetX || 0) * 15;
+      const gazeY = (headPose.eyeGaze?.gazeOffsetY || 0) * 12;
+
+      ctx.strokeStyle = isDistracted ? '#ef4444' : '#10b981';
+      ctx.lineWidth = 1.6;
+      ctx.shadowColor = isDistracted ? '#ef4444' : '#10b981';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx + gazeX, ry + gazeY);
+      ctx.stroke();
+    }
+  }
+
+  // 4. Central Alignment Crosshair (Dashed)
+  ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
   ctx.setLineDash([3, 3]);
   ctx.lineWidth = 1;
 
@@ -84,7 +148,6 @@ function drawFaceMesh(
   const chin = landmarks[152];
   const leftCheek = landmarks[234];
   const rightCheek = landmarks[454];
-  const noseTip = landmarks[1];
 
   if (topForehead && chin) {
     ctx.beginPath();
@@ -101,51 +164,6 @@ function drawFaceMesh(
   }
 
   ctx.setLineDash([]); // Reset dash
-
-  // 3. Key Landmark Feature Glowing Dots
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = '#60a5fa';
-  ctx.shadowBlur = 8;
-  [1, 33, 263, 61, 291, 152, 10, 234, 454, 168].forEach((idx) => {
-    const pt = landmarks[idx];
-    if (pt) {
-      const px = pt.x * width;
-      const py = pt.y * height;
-      ctx.beginPath();
-      ctx.arc(px, py, 2.5, 0, 2 * Math.PI);
-      ctx.fill();
-    }
-  });
-
-  // 4. Head Pose 3D Orientation Pointer from Nose Tip
-  if (noseTip) {
-    const nx = noseTip.x * width;
-    const ny = noseTip.y * height;
-
-    let dirOffsetX = 0;
-    let dirOffsetY = 0;
-    if (direction === 'left') dirOffsetX = -20;
-    else if (direction === 'right') dirOffsetX = 20;
-    else if (direction === 'down') dirOffsetY = 20;
-    else if (direction === 'up') dirOffsetY = -20;
-
-    // Vector line
-    ctx.strokeStyle = isDistracted ? '#ef4444' : '#10b981';
-    ctx.lineWidth = 2.5;
-    ctx.shadowColor = isDistracted ? '#ef4444' : '#10b981';
-    ctx.shadowBlur = 8;
-
-    ctx.beginPath();
-    ctx.moveTo(nx, ny);
-    ctx.lineTo(nx + dirOffsetX, ny + dirOffsetY);
-    ctx.stroke();
-
-    // Target pointer circle
-    ctx.fillStyle = isDistracted ? '#ef4444' : '#10b981';
-    ctx.beginPath();
-    ctx.arc(nx + dirOffsetX, ny + dirOffsetY, 3.5, 0, 2 * Math.PI);
-    ctx.fill();
-  }
 
   // 5. Sci-Fi Cybernetic Bounding Box with Corner Accents
   let minX = 1, minY = 1, maxX = 0, maxY = 0;
@@ -172,32 +190,12 @@ function drawFaceMesh(
   ctx.shadowColor = glowColor;
   ctx.shadowBlur = 10;
 
-  // Top-Left Corner
+  // 4 Corner Brackets
   ctx.beginPath();
-  ctx.moveTo(bx, by + cornerLen);
-  ctx.lineTo(bx, by);
-  ctx.lineTo(bx + cornerLen, by);
-  ctx.stroke();
-
-  // Top-Right Corner
-  ctx.beginPath();
-  ctx.moveTo(bx + bw - cornerLen, by);
-  ctx.lineTo(bx + bw, by);
-  ctx.lineTo(bx + bw, by + cornerLen);
-  ctx.stroke();
-
-  // Bottom-Left Corner
-  ctx.beginPath();
-  ctx.moveTo(bx, by + bh - cornerLen);
-  ctx.lineTo(bx, by + bh);
-  ctx.lineTo(bx + cornerLen, by + bh);
-  ctx.stroke();
-
-  // Bottom-Right Corner
-  ctx.beginPath();
-  ctx.moveTo(bx + bw - cornerLen, by + bh);
-  ctx.lineTo(bx + bw, by + bh);
-  ctx.lineTo(bx + bw, by + bh - cornerLen);
+  ctx.moveTo(bx, by + cornerLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cornerLen, by);
+  ctx.moveTo(bx + bw - cornerLen, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cornerLen);
+  ctx.moveTo(bx, by + bh - cornerLen); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + cornerLen, by + bh);
+  ctx.moveTo(bx + bw - cornerLen, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cornerLen);
   ctx.stroke();
 
   ctx.restore();
@@ -219,6 +217,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
   const [isPermissionError, setIsPermissionError] = useState(false);
   const [currentDir, setCurrentDir] = useState<HeadDirection>('front');
   const [isFaceDetected, setIsFaceDetected] = useState(false);
+  const [eyeGazeStatus, setEyeGazeStatus] = useState<string>('Menatap Layar');
 
   useEffect(() => {
     let isMounted = true;
@@ -255,14 +254,14 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
         await video.play();
         setIsCameraReady(true);
 
-        // 2. Initialize MediaPipe in parallel
+        // 2. Initialize MediaPipe locally
         try {
           if (!faceDetector.isReady()) {
             await faceDetector.init();
           }
           if (isMounted) setIsAiLoading(false);
         } catch (aiErr) {
-          console.warn('[Concentra] MediaPipe init error, running basic mode', aiErr);
+          console.warn('[Concentra] MediaPipe init error', aiErr);
           if (isMounted) setIsAiLoading(false);
         }
 
@@ -270,7 +269,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
 
         focusCalculator.reset();
 
-        // 3. Start MediaPipe Detection Loop
+        // 3. Start MediaPipe Detection Loop with Eye Landmark tracking
         faceDetector.startDetection(video, (landmarks) => {
           if (!isMounted) return;
 
@@ -283,21 +282,31 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
           const headPose = HeadPoseEstimator.estimatePose(landmarks || []);
           setCurrentDir(headPose.direction);
 
+          if (headPose.eyeGaze) {
+            if (headPose.eyeGaze.isEyesClosed) {
+              setEyeGazeStatus('Memejamkan Mata');
+            } else if (headPose.eyeGaze.isLookingAtScreen) {
+              setEyeGazeStatus('Pupil Fokus ke Layar');
+            } else {
+              setEyeGazeStatus('Pandangan Mata Berpaling');
+            }
+          }
+
           const metrics = focusCalculator.calculate(hasFace, headPose);
           metricsCallbackRef.current(metrics);
 
-          // Render Face Wireframe Mesh & Contour Lines
+          // Render Face Wireframe Mesh, Eye Contours, and Glowing Iris Rings
           if (ctx && canvas) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             if (hasFace && landmarks) {
-              drawFaceMesh(
+              drawFaceMeshAndEyes(
                 ctx,
                 landmarks,
                 canvas.width,
                 canvas.height,
                 metrics.isDistracted,
-                headPose.direction
+                headPose
               );
             }
           }
@@ -352,11 +361,11 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
 
   return (
     <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-700/60 shadow-xl">
-      <div className="relative w-full h-[160px] flex items-center justify-center bg-slate-900">
+      <div className="relative w-full h-[165px] flex items-center justify-center bg-slate-900">
         {!isCameraReady && !errorMsg && (
           <div className="flex flex-col items-center gap-2 text-brand-400 z-10">
             <Loader2 className="w-6 h-6 animate-spin" />
-            <span className="text-[11px] font-medium text-slate-300">Menghubungkan Kamera...</span>
+            <span className="text-[11px] font-medium text-slate-300">Menghubungkan Kamera & AI...</span>
           </div>
         )}
 
@@ -388,7 +397,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
           style={{ transform: 'scaleX(-1)' }}
         />
 
-        {/* Transparent Face Mesh Wireframe Overlay Canvas */}
+        {/* Transparent Face Mesh & Glowing Iris Canvas Overlay */}
         <canvas
           ref={canvasRef}
           width={320}
@@ -402,17 +411,22 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
         {/* Live HUD Badges on top of camera */}
         {isCameraReady && !errorMsg && (
           <>
-            <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md px-2 py-0.5 rounded-md border border-slate-700/50 text-[10px] z-10">
+            <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md px-2 py-0.5 rounded-md border border-slate-700/50 text-[10px] z-10">
               <span className={`w-2 h-2 rounded-full ${isFaceDetected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-              <span className="text-slate-200 font-semibold">{isFaceDetected ? 'AI LIVE' : isAiLoading ? 'MEMUAT AI...' : 'NO FACE'}</span>
+              <span className="text-slate-200 font-semibold">{isFaceDetected ? 'AI EYE TRACKER' : isAiLoading ? 'MEMUAT AI...' : 'NO FACE'}</span>
             </div>
 
-            {isAiLoading && (
+            {isAiLoading ? (
               <div className="absolute top-2 right-2 flex items-center gap-1 bg-brand-500/20 backdrop-blur-md px-2 py-0.5 rounded-md border border-brand-500/30 text-[10px] text-brand-300 z-10">
                 <Sparkles className="w-3 h-3 animate-spin" />
-                <span>Memuat Model AI</span>
+                <span>Memuat Iris AI</span>
               </div>
-            )}
+            ) : isFaceDetected ? (
+              <div className="absolute top-2 right-2 flex items-center gap-1 bg-slate-900/85 backdrop-blur-md px-2 py-0.5 rounded-md border border-cyan-500/30 text-[10px] text-cyan-300 z-10">
+                <Eye className="w-3 h-3 text-cyan-400 animate-pulse" />
+                <span>{eyeGazeStatus}</span>
+              </div>
+            ) : null}
 
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-slate-900/85 backdrop-blur-md px-2.5 py-1.5 rounded-md border border-slate-700/50 text-[10px] z-10">
               <span className="text-slate-200 font-medium flex items-center gap-1.5 truncate">
