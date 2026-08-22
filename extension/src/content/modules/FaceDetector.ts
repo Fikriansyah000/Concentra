@@ -7,14 +7,13 @@ export class FaceDetector {
   private isRunning: boolean = false;
   private animFrameId: number | null = null;
   private lastProcessedTime: number = 0;
-  private readonly frameInterval: number = 1000 / 20; // ~50ms (20 FPS smooth tracking)
+  private readonly frameInterval: number = 1000 / 25; // ~40ms (25 FPS super responsive)
 
   async init(): Promise<void> {
     if (this.landmarker || this.isInitializing) return;
 
     this.isInitializing = true;
     try {
-      // Determine local extension path if available, otherwise CDN
       let wasmPath = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
       let modelPath = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
@@ -28,7 +27,7 @@ export class FaceDetector {
       console.log('[Concentra FaceDetector] Loading MediaPipe vision tasks from:', wasmPath);
       const vision = await FilesetResolver.forVisionTasks(wasmPath);
 
-      console.log('[Concentra FaceDetector] Loading FaceLandmarker model from:', modelPath);
+      console.log('[Concentra FaceDetector] Loading FaceLandmarker with blendshapes from:', modelPath);
       try {
         this.landmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -37,9 +36,10 @@ export class FaceDetector {
           },
           runningMode: 'VIDEO',
           numFaces: 1,
-          minFaceDetectionConfidence: 0.4,
-          minFacePresenceConfidence: 0.4,
-          minTrackingConfidence: 0.4,
+          outputFaceBlendshapes: true,
+          minFaceDetectionConfidence: 0.35,
+          minFacePresenceConfidence: 0.35,
+          minTrackingConfidence: 0.35,
         });
       } catch (gpuError) {
         console.warn('[Concentra FaceDetector] GPU delegate fallback to CPU:', gpuError);
@@ -50,13 +50,14 @@ export class FaceDetector {
           },
           runningMode: 'VIDEO',
           numFaces: 1,
-          minFaceDetectionConfidence: 0.4,
-          minFacePresenceConfidence: 0.4,
-          minTrackingConfidence: 0.4,
+          outputFaceBlendshapes: true,
+          minFaceDetectionConfidence: 0.35,
+          minFacePresenceConfidence: 0.35,
+          minTrackingConfidence: 0.35,
         });
       }
 
-      console.log('[Concentra FaceDetector] MediaPipe FaceLandmarker successfully initialized and READY!');
+      console.log('[Concentra FaceDetector] MediaPipe FaceLandmarker + Blendshapes READY!');
     } catch (error) {
       console.error('[Concentra FaceDetector] Failed to load MediaPipe:', error);
       throw error;
@@ -102,7 +103,7 @@ export class FaceDetector {
     };
 
     this.animFrameId = requestAnimationFrame(detectLoop);
-    console.log('[Concentra FaceDetector] Detection loop running');
+    console.log('[Concentra FaceDetector] Detection loop running with Blendshapes');
   }
 
   stopDetection() {

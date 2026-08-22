@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { FaceDetector } from '../../content/modules/FaceDetector';
 import { HeadPoseEstimator, HeadDirection, Landmark3D, HeadPoseResult } from '../../content/modules/HeadPoseEstimator';
 import { FocusCalculator, FocusMetrics } from '../../content/modules/FocusCalculator';
-import { Camera, CameraOff, Loader2, KeyRound, Sparkles, Eye } from 'lucide-react';
+import { Camera, CameraOff, Loader2, KeyRound, Sparkles, Eye, Moon } from 'lucide-react';
 
 interface CameraPreviewProps {
   isActive: boolean;
@@ -18,7 +18,6 @@ const RIGHT_EYEBROW = [336, 296, 334, 293, 300];
 const NOSE_BRIDGE = [168, 6, 197, 195, 5, 4, 1, 19, 94, 2];
 const LIPS = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61];
 
-// Iris / Eyeball Landmarks
 const LEFT_IRIS_RING = [469, 470, 471, 472, 469];
 const RIGHT_IRIS_RING = [474, 475, 476, 477, 474];
 
@@ -52,10 +51,11 @@ function drawFaceMeshAndEyes(
 ) {
   ctx.save();
 
-  const mainColor = isDistracted ? '#f87171' : '#818cf8';
-  const glowColor = isDistracted ? '#ef4444' : '#6366f1';
-  const eyeLineColor = isDistracted ? '#fca5a5' : '#38bdf8';
-  const irisGlowColor = isDistracted ? '#ef4444' : '#00f0ff';
+  const isMerem = headPose.eyeGaze?.isEyesClosed || false;
+  const mainColor = isMerem ? '#f87171' : isDistracted ? '#fbbf24' : '#818cf8';
+  const glowColor = isMerem ? '#ef4444' : isDistracted ? '#f59e0b' : '#6366f1';
+  const eyeLineColor = isMerem ? '#ef4444' : isDistracted ? '#fca5a5' : '#38bdf8';
+  const irisGlowColor = isMerem ? '#ef4444' : isDistracted ? '#f59e0b' : '#00f0ff';
 
   // 1. Draw Facial Contours & Wireframe Mesh Lines
   ctx.strokeStyle = mainColor;
@@ -74,15 +74,14 @@ function drawFaceMeshAndEyes(
 
   // 2. DETAILED EYE CONTOURS (Upper & Lower Eyelids)
   ctx.strokeStyle = eyeLineColor;
-  ctx.lineWidth = 1.5;
-  ctx.shadowColor = irisGlowColor;
-  ctx.shadowBlur = 6;
+  ctx.lineWidth = isMerem ? 2.5 : 1.5;
+  ctx.shadowColor = isMerem ? '#ef4444' : irisGlowColor;
+  ctx.shadowBlur = isMerem ? 10 : 6;
   drawPath(ctx, landmarks, LEFT_EYE_CONTOUR, width, height, true);
   drawPath(ctx, landmarks, RIGHT_EYE_CONTOUR, width, height, true);
 
-  // 3. DETAILED IRIS & EYEBALL TRACKING (Bola Mata)
-  if (landmarks.length >= 478) {
-    // Glowing Iris Ring (Left Eye)
+  // 3. DETAILED IRIS & EYEBALL TRACKING (When Eyes Open)
+  if (!isMerem && landmarks.length >= 478) {
     ctx.strokeStyle = irisGlowColor;
     ctx.lineWidth = 1.8;
     ctx.shadowColor = irisGlowColor;
@@ -102,7 +101,7 @@ function drawFaceMeshAndEyes(
       ctx.arc(lx, ly, 2, 0, 2 * Math.PI);
       ctx.fill();
 
-      // Eye Gaze Sight Ray / Laser Vector
+      // Eye Gaze Sight Ray Vector
       const gazeX = (headPose.eyeGaze?.gazeOffsetX || 0) * 15;
       const gazeY = (headPose.eyeGaze?.gazeOffsetY || 0) * 12;
 
@@ -139,7 +138,24 @@ function drawFaceMeshAndEyes(
     }
   }
 
-  // 4. Central Alignment Crosshair (Dashed)
+  // 4. If Eyes Closed (MEREM), Draw Visual Alert on Eyes
+  if (isMerem) {
+    const leftEye = landmarks[33];
+    const rightEye = landmarks[263];
+    if (leftEye && rightEye) {
+      const midX = ((leftEye.x + rightEye.x) / 2) * width;
+      const midY = ((leftEye.y + rightEye.y) / 2) * height - 16;
+
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#ef4444';
+      ctx.shadowBlur = 8;
+      ctx.fillText('MATA TERPEJAM (MEREM)', midX, midY);
+    }
+  }
+
+  // 5. Central Alignment Crosshair (Dashed)
   ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
   ctx.setLineDash([3, 3]);
   ctx.lineWidth = 1;
@@ -163,9 +179,9 @@ function drawFaceMeshAndEyes(
     ctx.stroke();
   }
 
-  ctx.setLineDash([]); // Reset dash
+  ctx.setLineDash([]);
 
-  // 5. Sci-Fi Cybernetic Bounding Box with Corner Accents
+  // 6. Sci-Fi Cybernetic Bounding Box with Corner Accents
   let minX = 1, minY = 1, maxX = 0, maxY = 0;
   FACE_OVAL.forEach((idx) => {
     const pt = landmarks[idx];
@@ -185,12 +201,11 @@ function drawFaceMeshAndEyes(
   const bh = Math.min(height - by, (maxY - minY) * height + padY * 2);
   const cornerLen = 14;
 
-  ctx.strokeStyle = isDistracted ? '#ef4444' : '#6366f1';
+  ctx.strokeStyle = isMerem ? '#ef4444' : isDistracted ? '#f59e0b' : '#6366f1';
   ctx.lineWidth = 2;
   ctx.shadowColor = glowColor;
   ctx.shadowBlur = 10;
 
-  // 4 Corner Brackets
   ctx.beginPath();
   ctx.moveTo(bx, by + cornerLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cornerLen, by);
   ctx.moveTo(bx + bw - cornerLen, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cornerLen);
@@ -217,6 +232,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
   const [isPermissionError, setIsPermissionError] = useState(false);
   const [currentDir, setCurrentDir] = useState<HeadDirection>('front');
   const [isFaceDetected, setIsFaceDetected] = useState(false);
+  const [isEyesClosed, setIsEyesClosed] = useState(false);
   const [eyeGazeStatus, setEyeGazeStatus] = useState<string>('Menatap Layar');
 
   useEffect(() => {
@@ -269,8 +285,8 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
 
         focusCalculator.reset();
 
-        // 3. Start MediaPipe Detection Loop with Eye Landmark tracking
-        faceDetector.startDetection(video, (landmarks) => {
+        // 3. Start MediaPipe Detection Loop with Blendshapes and Raw Results
+        faceDetector.startDetection(video, (landmarks, rawResult) => {
           if (!isMounted) return;
 
           const canvas = canvasRef.current;
@@ -279,23 +295,26 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
           const hasFace = !!(landmarks && landmarks.length >= 468);
           setIsFaceDetected(hasFace);
 
-          const headPose = HeadPoseEstimator.estimatePose(landmarks || []);
+          const headPose = HeadPoseEstimator.estimatePose(landmarks || [], rawResult);
           setCurrentDir(headPose.direction);
 
+          const eyesClosed = headPose.eyeGaze?.isEyesClosed || false;
+          setIsEyesClosed(eyesClosed);
+
           if (headPose.eyeGaze) {
-            if (headPose.eyeGaze.isEyesClosed) {
-              setEyeGazeStatus('Memejamkan Mata');
+            if (eyesClosed) {
+              setEyeGazeStatus('Mata Terpejam (Merem)');
             } else if (headPose.eyeGaze.isLookingAtScreen) {
               setEyeGazeStatus('Pupil Fokus ke Layar');
             } else {
-              setEyeGazeStatus('Pandangan Mata Berpaling');
+              setEyeGazeStatus('Pandangan Berpaling');
             }
           }
 
           const metrics = focusCalculator.calculate(hasFace, headPose);
           metricsCallbackRef.current(metrics);
 
-          // Render Face Wireframe Mesh, Eye Contours, and Glowing Iris Rings
+          // Render Face Wireframe Mesh, Eye Contours, and Merem Indicator
           if (ctx && canvas) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -345,8 +364,9 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
     chrome.tabs.create({ url: chrome.runtime.getURL('permission.html') });
   };
 
-  const getDirectionLabel = (dir: HeadDirection, face: boolean) => {
+  const getDirectionLabel = (dir: HeadDirection, face: boolean, merem: boolean) => {
     if (!face) return 'Mencari Wajah...';
+    if (merem) return 'Mata Terpejam (Merem / Mengantuk)';
     switch (dir) {
       case 'front': return 'Menatap Layar (Fokus)';
       case 'left': return 'Menoleh Kiri';
@@ -397,7 +417,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
           style={{ transform: 'scaleX(-1)' }}
         />
 
-        {/* Transparent Face Mesh & Glowing Iris Canvas Overlay */}
+        {/* Transparent Face Mesh & Merem Detection Canvas Overlay */}
         <canvas
           ref={canvasRef}
           width={320}
@@ -412,8 +432,8 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
         {isCameraReady && !errorMsg && (
           <>
             <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md px-2 py-0.5 rounded-md border border-slate-700/50 text-[10px] z-10">
-              <span className={`w-2 h-2 rounded-full ${isFaceDetected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-              <span className="text-slate-200 font-semibold">{isFaceDetected ? 'AI EYE TRACKER' : isAiLoading ? 'MEMUAT AI...' : 'NO FACE'}</span>
+              <span className={`w-2 h-2 rounded-full ${isFaceDetected ? isEyesClosed ? 'bg-rose-500 animate-ping' : 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+              <span className="text-slate-200 font-semibold">{isFaceDetected ? isEyesClosed ? 'MEREM DETECTED' : 'AI EYE TRACKER' : isAiLoading ? 'MEMUAT AI...' : 'NO FACE'}</span>
             </div>
 
             {isAiLoading ? (
@@ -422,19 +442,23 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
                 <span>Memuat Iris AI</span>
               </div>
             ) : isFaceDetected ? (
-              <div className="absolute top-2 right-2 flex items-center gap-1 bg-slate-900/85 backdrop-blur-md px-2 py-0.5 rounded-md border border-cyan-500/30 text-[10px] text-cyan-300 z-10">
-                <Eye className="w-3 h-3 text-cyan-400 animate-pulse" />
+              <div className={`absolute top-2 right-2 flex items-center gap-1 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] z-10 border ${
+                isEyesClosed ? 'bg-rose-500/25 border-rose-500/50 text-rose-300' : 'bg-slate-900/85 border-cyan-500/30 text-cyan-300'
+              }`}>
+                {isEyesClosed ? <Moon className="w-3 h-3 text-rose-400 animate-bounce" /> : <Eye className="w-3 h-3 text-cyan-400 animate-pulse" />}
                 <span>{eyeGazeStatus}</span>
               </div>
             ) : null}
 
             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between bg-slate-900/85 backdrop-blur-md px-2.5 py-1.5 rounded-md border border-slate-700/50 text-[10px] z-10">
-              <span className="text-slate-200 font-medium flex items-center gap-1.5 truncate">
+              <span className={`font-medium flex items-center gap-1.5 truncate ${isEyesClosed ? 'text-rose-300' : 'text-slate-200'}`}>
                 <Camera className="w-3.5 h-3.5 text-brand-400 shrink-0" />
-                <span className="truncate">{getDirectionLabel(currentDir, isFaceDetected)}</span>
+                <span className="truncate">{getDirectionLabel(currentDir, isFaceDetected, isEyesClosed)}</span>
               </span>
-              <span className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${isFaceDetected ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 bg-slate-800'}`}>
-                {isFaceDetected ? 'TERDETEKSI' : 'STANDBY'}
+              <span className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${
+                isEyesClosed ? 'text-rose-300 bg-rose-500/20' : isFaceDetected ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 bg-slate-800'
+              }`}>
+                {isEyesClosed ? 'TERPEJAM' : isFaceDetected ? 'TERDETEKSI' : 'STANDBY'}
               </span>
             </div>
           </>
