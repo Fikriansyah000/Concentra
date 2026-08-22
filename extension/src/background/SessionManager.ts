@@ -42,6 +42,7 @@ export class SessionManager {
     await extensionStorage.setActiveSession(sessionState);
     this.startTimer();
     this.updateExtensionBadge('ON', '#10b981'); // Emerald
+    this.broadcastToTabs({ type: 'START_SESSION', payload: sessionState });
 
     return sessionState;
   }
@@ -61,6 +62,7 @@ export class SessionManager {
     await extensionStorage.setActiveSession(session);
     this.stopTimer();
     this.updateExtensionBadge('PAUSE', '#f59e0b'); // Amber
+    this.broadcastToTabs({ type: 'PAUSE_SESSION', payload: session });
 
     return session;
   }
@@ -79,6 +81,7 @@ export class SessionManager {
     await extensionStorage.setActiveSession(session);
     this.startTimer();
     this.updateExtensionBadge('ON', '#10b981');
+    this.broadcastToTabs({ type: 'RESUME_SESSION', payload: session });
 
     return session;
   }
@@ -98,6 +101,7 @@ export class SessionManager {
     session.status = 'completed';
     await extensionStorage.setActiveSession(session);
     this.updateExtensionBadge('', '');
+    this.broadcastToTabs({ type: 'STOP_SESSION', payload: session });
 
     return session;
   }
@@ -114,6 +118,20 @@ export class SessionManager {
     }
 
     await extensionStorage.setActiveSession(session);
+  }
+
+  private static broadcastToTabs(message: any) {
+    try {
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach((tab) => {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('[Concentra SW] Broadcast error', e);
+    }
   }
 
   private static startTimer() {
