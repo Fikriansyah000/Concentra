@@ -7,6 +7,7 @@ import {
   FileText,
   Settings,
   ShieldCheck,
+  Clock,
 } from 'lucide-react';
 import { useUIStore } from '../../stores/uiStore';
 import { cn } from '../../lib/utils';
@@ -16,9 +17,8 @@ export const Sidebar: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { label: 'Sesi Belajar', icon: PlayCircle, path: '/sessions' },
-    { label: 'Analitik & Tren', icon: BarChart2, path: '/analytics' },
-    { label: 'Laporan Sesi', icon: FileText, path: '/reports' },
+    { label: 'Riwayat Sesi', icon: Clock, path: '/history' },
+    { label: 'Analitik & Laporan', icon: BarChart2, path: '/reports/weekly' },
     { label: 'Pengaturan', icon: Settings, path: '/settings' },
   ];
 

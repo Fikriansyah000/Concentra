@@ -4,6 +4,11 @@ import { ProtectedRoute } from './ProtectedRoute';
 import { MainLayout } from '../components/layout/MainLayout';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
+import { SessionHistoryPage } from '../pages/SessionHistoryPage';
+import { SessionDetailPage } from '../pages/SessionDetailPage';
+import { ReportDetailPage } from '../pages/ReportDetailPage';
+import { SettingsPage } from '../pages/SettingsPage';
+import { ProfilePage } from '../pages/ProfilePage';
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -14,10 +19,11 @@ export const AppRoutes: React.FC = () => {
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/sessions" element={<DashboardPage />} />
-          <Route path="/analytics" element={<DashboardPage />} />
-          <Route path="/reports" element={<DashboardPage />} />
-          <Route path="/settings" element={<DashboardPage />} />
+          <Route path="/history" element={<SessionHistoryPage />} />
+          <Route path="/sessions/:id" element={<SessionDetailPage />} />
+          <Route path="/reports/:id" element={<ReportDetailPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
         </Route>
       </Route>
 
