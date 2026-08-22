@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { CameraManager } from '../../content/modules/CameraManager';
 import { FaceDetector } from '../../content/modules/FaceDetector';
 import { HeadPoseEstimator, HeadDirection } from '../../content/modules/HeadPoseEstimator';
 import { FocusCalculator, FocusMetrics } from '../../content/modules/FocusCalculator';
-import { Camera, CameraOff, Loader2 } from 'lucide-react';
+import { Camera, CameraOff, Loader2, KeyRound } from 'lucide-react';
 
 interface CameraPreviewProps {
   isActive: boolean;
@@ -17,87 +17,91 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
   const [focusCalculator] = useState(() => new FocusCalculator());
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isPermissionError, setIsPermissionError] = useState(false);
   const [currentDir, setCurrentDir] = useState<HeadDirection>('front');
   const [isFaceDetected, setIsFaceDetected] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
+  const initCameraAndAI = useCallback(async () => {
+    if (!isActive) {
+      faceDetector.stopDetection();
+      cameraManager.stopCamera();
+      return;
+    }
 
-    const initCameraAndAI = async () => {
-      if (!isActive) {
-        faceDetector.stopDetection();
-        cameraManager.stopCamera();
-        return;
+    setIsLoading(true);
+    setErrorMsg(null);
+    setIsPermissionError(false);
+
+    try {
+      // 1. Start Webcam
+      const video = await cameraManager.startCamera(320, 240);
+
+      // 2. Init MediaPipe
+      if (!faceDetector.isReady()) {
+        await faceDetector.init();
       }
 
-      setIsLoading(true);
-      setErrorMsg(null);
+      setIsLoading(false);
+      focusCalculator.reset();
 
-      try {
-        // 1. Start Webcam
-        const video = await cameraManager.startCamera(320, 240);
-        if (!isMounted) return;
+      // 3. Start Detection Loop
+      faceDetector.startDetection(video, (landmarks) => {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
 
-        // 2. Init MediaPipe
-        if (!faceDetector.isReady()) {
-          await faceDetector.init();
-        }
-        if (!isMounted) return;
+        // Draw video on canvas
+        if (ctx && canvas && video.readyState >= 2) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        setIsLoading(false);
-        focusCalculator.reset();
-
-        // 3. Start Detection Loop
-        faceDetector.startDetection(video, (landmarks) => {
-          if (!isMounted) return;
-
-          const canvas = canvasRef.current;
-          const ctx = canvas?.getContext('2d');
-
-          // Draw video on canvas
-          if (ctx && canvas && video.readyState >= 2) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // Draw landmark dots
-            if (landmarks && landmarks.length > 0) {
-              ctx.fillStyle = '#6366f1';
-              [1, 33, 263, 61, 291, 152, 10].forEach((idx) => {
-                const pt = landmarks[idx];
-                if (pt) {
-                  const px = pt.x * canvas.width;
-                  const py = pt.y * canvas.height;
-                  ctx.beginPath();
-                  ctx.arc(px, py, 2.5, 0, 2 * Math.PI);
-                  ctx.fill();
-                }
-              });
-            }
+          // Draw landmark dots
+          if (landmarks && landmarks.length > 0) {
+            ctx.fillStyle = '#6366f1';
+            [1, 33, 263, 61, 291, 152, 10].forEach((idx) => {
+              const pt = landmarks[idx];
+              if (pt) {
+                const px = pt.x * canvas.width;
+                const py = pt.y * canvas.height;
+                ctx.beginPath();
+                ctx.arc(px, py, 2.5, 0, 2 * Math.PI);
+                ctx.fill();
+              }
+            });
           }
+        }
 
-          const hasFace = !!(landmarks && landmarks.length >= 468);
-          setIsFaceDetected(hasFace);
+        const hasFace = !!(landmarks && landmarks.length >= 468);
+        setIsFaceDetected(hasFace);
 
-          const headPose = HeadPoseEstimator.estimatePose(landmarks || []);
-          setCurrentDir(headPose.direction);
+        const headPose = HeadPoseEstimator.estimatePose(landmarks || []);
+        setCurrentDir(headPose.direction);
 
-          const metrics = focusCalculator.calculate(hasFace, headPose);
-          onMetricsUpdate(metrics);
-        });
-      } catch (err: any) {
-        if (!isMounted) return;
-        setIsLoading(false);
-        setErrorMsg(err?.message || 'Gagal mengakses kamera webcam.');
+        const metrics = focusCalculator.calculate(hasFace, headPose);
+        onMetricsUpdate(metrics);
+      });
+    } catch (err: any) {
+      setIsLoading(false);
+      const msg = err?.message || '';
+      if (msg.includes('Permission') || msg.includes('NotAllowedError') || msg.includes('denied') || msg.includes('dismissed')) {
+        setIsPermissionError(true);
+        setErrorMsg('Izin kamera belum diberikan.');
+      } else {
+        setErrorMsg(msg || 'Gagal mengakses kamera webcam.');
       }
-    };
+    }
+  }, [isActive, cameraManager, faceDetector, focusCalculator, onMetricsUpdate]);
 
+  useEffect(() => {
     initCameraAndAI();
 
     return () => {
-      isMounted = false;
       faceDetector.stopDetection();
       cameraManager.stopCamera();
     };
-  }, [isActive]);
+  }, [initCameraAndAI, cameraManager, faceDetector]);
+
+  const openPermissionTab = () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('permission.html') });
+  };
 
   const getDirectionLabel = (dir: HeadDirection, face: boolean) => {
     if (!face) return 'Wajah Tidak Terdeteksi';
@@ -115,7 +119,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
 
   return (
     <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-700/60 shadow-inner">
-      <div className="relative w-full h-[140px] flex items-center justify-center bg-slate-900">
+      <div className="relative w-full h-[145px] flex items-center justify-center bg-slate-900">
         {isLoading && (
           <div className="flex flex-col items-center gap-2 text-brand-400 z-10">
             <Loader2 className="w-6 h-6 animate-spin" />
@@ -124,9 +128,18 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
         )}
 
         {errorMsg && (
-          <div className="p-3 text-center text-rose-400 text-xs flex flex-col items-center gap-1 z-10">
+          <div className="p-3 text-center text-rose-300 text-xs flex flex-col items-center gap-2 z-10 max-w-[280px]">
             <CameraOff className="w-5 h-5 text-rose-400" />
             <span>{errorMsg}</span>
+            {isPermissionError && (
+              <button
+                onClick={openPermissionTab}
+                className="mt-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-[11px] shadow flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                Aktifkan Izin Kamera
+              </button>
+            )}
           </div>
         )}
 
