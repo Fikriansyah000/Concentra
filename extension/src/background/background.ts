@@ -6,7 +6,7 @@ console.log('[Concentra Background SW] Initialized');
 
 SessionManager.init();
 
-// Listen for messages from popup and content scripts
+// Listen for messages from popup, offscreen, and content scripts
 chrome.runtime.onMessage.addListener((message: BaseExtensionMessage, _sender, sendResponse) => {
   (async () => {
     try {
@@ -51,7 +51,8 @@ chrome.runtime.onMessage.addListener((message: BaseExtensionMessage, _sender, se
           if (message.payload) {
             await SessionManager.handleFocusUpdate(
               message.payload.focusScore,
-              message.payload.isDistracted
+              message.payload.isDistracted,
+              message.payload.headDirection
             );
           }
           sendResponse({ success: true });
@@ -67,5 +68,5 @@ chrome.runtime.onMessage.addListener((message: BaseExtensionMessage, _sender, se
     }
   })();
 
-  return true; // Keep channel open for async response
+  return true;
 });

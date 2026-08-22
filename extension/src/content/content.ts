@@ -1,127 +1,76 @@
-import { CameraManager } from './modules/CameraManager';
-import { FaceDetector } from './modules/FaceDetector';
-import { HeadPoseEstimator } from './modules/HeadPoseEstimator';
-import { FocusCalculator } from './modules/FocusCalculator';
 import { FocusOverlay } from './overlay/FocusOverlay';
 import { BaseExtensionMessage } from '../shared/types';
 import { extensionStorage } from '../shared/storage';
 
 console.log('[Concentra Content Script] Injected on:', window.location.href);
 
-const cameraManager = new CameraManager();
-const faceDetector = new FaceDetector();
-const focusCalculator = new FocusCalculator();
 let focusOverlay: FocusOverlay | null = null;
-
 let isSessionActive = false;
-let lastMessageTime = 0;
 
-async function startTracking() {
-  if (isSessionActive) return;
-  isSessionActive = true;
-
-  try {
-    if (!focusOverlay) {
-      focusOverlay = new FocusOverlay();
-    }
-    focusOverlay.show();
-
-    // 1. Start Webcam
-    const videoEl = await cameraManager.startCamera(640, 480);
-    if (videoEl.srcObject instanceof MediaStream) {
-      focusOverlay.attachStream(videoEl.srcObject);
-    }
-
-    // 2. Initialize MediaPipe
-    if (!faceDetector.isReady()) {
-      await faceDetector.init();
-    }
-
-    focusCalculator.reset();
-
-    // 3. Start Detection Loop
-    faceDetector.startDetection(videoEl, (landmarks) => {
-      if (!isSessionActive) return;
-
-      const faceDetected = !!(landmarks && landmarks.length >= 468);
-      const headPose = HeadPoseEstimator.estimatePose(landmarks || []);
-      const metrics = focusCalculator.calculate(faceDetected, headPose);
-
-      // Update Overlay HUD on webpage
-      focusOverlay?.updateMetrics(metrics, landmarks);
-
-      // Send update to background SW once every 1 second
-      const now = performance.now();
-      if (now - lastMessageTime >= 1000) {
-        lastMessageTime = now;
-        chrome.runtime.sendMessage({
-          type: 'FOCUS_UPDATE',
-          payload: {
-            focusScore: metrics.smoothedScore,
-            headDirection: metrics.headPose.direction,
-            faceDetected: metrics.faceDetected,
-            isDistracted: metrics.isDistracted,
-            timestamp: new Date().toISOString(),
-          },
-        }).catch(() => {});
-      }
-    });
-
-    console.log('[Concentra Content Script] Tracking started on page');
-  } catch (error: any) {
-    console.error('[Concentra Content Script] Error starting camera/detection:', error);
-    isSessionActive = false;
-    stopTracking();
+function showHUD() {
+  if (!focusOverlay) {
+    focusOverlay = new FocusOverlay();
   }
+  focusOverlay.show();
+  isSessionActive = true;
 }
 
-function pauseTracking() {
-  faceDetector.stopDetection();
-  cameraManager.stopCamera();
+function hideHUD() {
+  isSessionActive = false;
   focusOverlay?.hide();
-  isSessionActive = false;
-  console.log('[Concentra Content Script] Tracking paused');
 }
 
-function stopTracking() {
+function destroyHUD() {
   isSessionActive = false;
-  faceDetector.stopDetection();
-  cameraManager.stopCamera();
   focusOverlay?.destroy();
   focusOverlay = null;
-  console.log('[Concentra Content Script] Tracking stopped & cleaned up');
 }
 
-// Listen for commands from Background SW or Popup
+// Listen for commands and live metric broadcasts from background SW
 chrome.runtime.onMessage.addListener((message: BaseExtensionMessage, _sender, sendResponse) => {
   try {
     switch (message.type) {
       case 'START_SESSION':
       case 'RESUME_SESSION':
-        startTracking();
+        showHUD();
         sendResponse({ success: true });
         break;
 
       case 'PAUSE_SESSION':
-        pauseTracking();
+        hideHUD();
         sendResponse({ success: true });
         break;
 
       case 'STOP_SESSION':
-        stopTracking();
+        destroyHUD();
         sendResponse({ success: true });
         break;
 
-      case 'SESSION_STATE_CHANGED':
-        if (message.payload?.status === 'active') {
-          startTracking();
-        } else if (message.payload?.status === 'paused') {
-          pauseTracking();
-        } else {
-          stopTracking();
+      case 'LIVE_FOCUS_METRIC': {
+        if (!focusOverlay && isSessionActive) {
+          showHUD();
+        }
+        if (focusOverlay && message.payload) {
+          const score = message.payload.score || 100;
+          const focusLevel = score >= 80 ? 'high' : score >= 55 ? 'medium' : score >= 30 ? 'low' : 'critical';
+
+          focusOverlay.updateMetrics({
+            rawScore: score,
+            smoothedScore: score,
+            isDistracted: message.payload.isDistracted,
+            faceDetected: true,
+            headPose: {
+              yaw: 0,
+              pitch: 0,
+              roll: 0,
+              direction: (message.payload.headDirection || 'front') as any,
+            },
+            focusLevel,
+          });
         }
         sendResponse({ success: true });
         break;
+      }
 
       default:
         sendResponse({ received: true });
@@ -132,15 +81,15 @@ chrome.runtime.onMessage.addListener((message: BaseExtensionMessage, _sender, se
   return true;
 });
 
-// Check if a session is already active when content script loads
+// Check if a session is already active when page loads
 (async () => {
   try {
     const active = await extensionStorage.getActiveSession();
     if (active && active.status === 'active') {
-      console.log('[Concentra Content Script] Found active session in storage, starting camera on page...');
-      startTracking();
+      console.log('[Concentra Content Script] Active session detected, mounting HUD...');
+      showHUD();
     }
   } catch (e) {
-    console.warn('[Concentra Content Script] Init check error', e);
+    console.warn('[Concentra Content Script] Init error', e);
   }
 })();
