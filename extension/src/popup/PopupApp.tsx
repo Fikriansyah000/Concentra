@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PopupHeader } from './components/PopupHeader';
 import { FocusStatus } from './components/FocusStatus';
 import { QuickStats } from './components/QuickStats';
 import { SessionControl } from './components/SessionControl';
+import { CameraPreview } from './components/CameraPreview';
 import { ActiveSessionState, UserAuthInfo } from '../shared/types';
 import { extensionStorage } from '../shared/storage';
 import { extensionMessaging } from '../shared/messaging';
 import { DEFAULT_SESSION_STATE } from '../shared/constants';
+import { FocusMetrics } from '../content/modules/FocusCalculator';
 import { ShieldCheck } from 'lucide-react';
 
 export const PopupApp: React.FC = () => {
@@ -25,19 +27,52 @@ export const PopupApp: React.FC = () => {
   useEffect(() => {
     refreshState();
 
-    // Poll storage for timer and focus updates every 1s when popup is open
+    // Poll storage for timer every 1s
     const interval = setInterval(async () => {
       const active = await extensionStorage.getActiveSession();
-      setSession(active);
+      setSession((prev) => ({
+        ...prev,
+        status: active.status,
+        elapsedSeconds: active.elapsedSeconds,
+        pauseCount: active.pauseCount,
+      }));
     }, 1000);
 
     return () => clearInterval(interval);
   }, []);
 
+  const handleMetricsUpdate = useCallback((metrics: FocusMetrics) => {
+    setSession((prev) => {
+      if (prev.status !== 'active') return prev;
+      const newAvg = Math.round(prev.avgFocusScore * 0.9 + metrics.smoothedScore * 0.1);
+      const newDistractions = metrics.isDistracted ? prev.totalDistractions + 1 : prev.totalDistractions;
+
+      const updated = {
+        ...prev,
+        currentFocusScore: metrics.smoothedScore,
+        avgFocusScore: newAvg,
+        totalDistractions: newDistractions,
+      };
+
+      // Background update
+      extensionMessaging.sendToBackground({
+        type: 'FOCUS_UPDATE',
+        payload: {
+          focusScore: metrics.smoothedScore,
+          headDirection: metrics.headPose.direction,
+          faceDetected: metrics.faceDetected,
+          isDistracted: metrics.isDistracted,
+          timestamp: new Date().toISOString(),
+        },
+      }).catch(() => {});
+
+      return updated;
+    });
+  }, []);
+
   const handleStart = async (title: string) => {
     setIsLoading(true);
     try {
-      // Get current active tab URL & platform
       chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
         const url = tabs[0]?.url || '';
         let sourceType = 'other';
@@ -83,10 +118,18 @@ export const PopupApp: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-[500px]">
+    <div className="flex flex-col min-h-[520px]">
       <PopupHeader auth={auth} isActive={session.status === 'active'} />
 
       <main className="flex-1 p-4 space-y-4">
+        {/* Live Camera Preview & Landmark Overlay when active */}
+        {session.status === 'active' && (
+          <CameraPreview
+            isActive={session.status === 'active'}
+            onMetricsUpdate={handleMetricsUpdate}
+          />
+        )}
+
         {/* Real-time Focus Gauge Card */}
         <FocusStatus
           score={session.currentFocusScore}

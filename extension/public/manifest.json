@@ -7,15 +7,11 @@
     "activeTab",
     "storage",
     "alarms",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
-    "https://meet.google.com/*",
-    "https://*.zoom.us/*",
-    "https://www.youtube.com/*",
-    "https://www.coursera.org/*",
-    "https://*.udemy.com/*",
-    "*://*/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
