@@ -1,12 +1,206 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FaceDetector } from '../../content/modules/FaceDetector';
-import { HeadPoseEstimator, HeadDirection } from '../../content/modules/HeadPoseEstimator';
+import { HeadPoseEstimator, HeadDirection, Landmark3D } from '../../content/modules/HeadPoseEstimator';
 import { FocusCalculator, FocusMetrics } from '../../content/modules/FocusCalculator';
 import { Camera, CameraOff, Loader2, KeyRound, Sparkles } from 'lucide-react';
 
 interface CameraPreviewProps {
   isActive: boolean;
   onMetricsUpdate: (metrics: FocusMetrics) => void;
+}
+
+// MediaPipe landmark connection indices for wireframe rendering
+const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
+const LEFT_EYE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246, 33];
+const RIGHT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398, 362];
+const LEFT_EYEBROW = [70, 63, 105, 66, 107];
+const RIGHT_EYEBROW = [336, 296, 334, 293, 300];
+const NOSE_BRIDGE = [168, 6, 197, 195, 5, 4, 1, 19, 94, 2];
+const LIPS = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61];
+
+function drawPath(ctx: CanvasRenderingContext2D, landmarks: Landmark3D[], indices: number[], width: number, height: number, close: boolean = false) {
+  if (indices.length < 2) return;
+  ctx.beginPath();
+  const first = landmarks[indices[0]];
+  if (!first) return;
+  ctx.moveTo(first.x * width, first.y * height);
+
+  for (let i = 1; i < indices.length; i++) {
+    const pt = landmarks[indices[i]];
+    if (pt) {
+      ctx.lineTo(pt.x * width, pt.y * height);
+    }
+  }
+
+  if (close) {
+    ctx.closePath();
+  }
+  ctx.stroke();
+}
+
+function drawFaceMesh(
+  ctx: CanvasRenderingContext2D,
+  landmarks: Landmark3D[],
+  width: number,
+  height: number,
+  isDistracted: boolean,
+  direction: HeadDirection
+) {
+  ctx.save();
+
+  const mainColor = isDistracted ? '#f87171' : '#818cf8';
+  const glowColor = isDistracted ? '#ef4444' : '#6366f1';
+  const accentColor = isDistracted ? '#fca5a5' : '#38bdf8';
+
+  // 1. Draw Facial Contours & Wireframe Mesh Lines
+  ctx.strokeStyle = mainColor;
+  ctx.lineWidth = 1.4;
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 6;
+
+  // Face Oval Outline
+  drawPath(ctx, landmarks, FACE_OVAL, width, height, true);
+
+  // Eyes & Eyebrows
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.2;
+  drawPath(ctx, landmarks, LEFT_EYE, width, height, true);
+  drawPath(ctx, landmarks, RIGHT_EYE, width, height, true);
+  drawPath(ctx, landmarks, LEFT_EYEBROW, width, height, false);
+  drawPath(ctx, landmarks, RIGHT_EYEBROW, width, height, false);
+
+  // Nose Bridge & Lips
+  ctx.strokeStyle = mainColor;
+  ctx.lineWidth = 1.2;
+  drawPath(ctx, landmarks, NOSE_BRIDGE, width, height, false);
+  drawPath(ctx, landmarks, LIPS, width, height, true);
+
+  // 2. Central Alignment Crosshair (Forehead to Chin & Cheek to Cheek)
+  ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
+  ctx.setLineDash([3, 3]);
+  ctx.lineWidth = 1;
+
+  const topForehead = landmarks[10];
+  const chin = landmarks[152];
+  const leftCheek = landmarks[234];
+  const rightCheek = landmarks[454];
+  const noseTip = landmarks[1];
+
+  if (topForehead && chin) {
+    ctx.beginPath();
+    ctx.moveTo(topForehead.x * width, topForehead.y * height);
+    ctx.lineTo(chin.x * width, chin.y * height);
+    ctx.stroke();
+  }
+
+  if (leftCheek && rightCheek) {
+    ctx.beginPath();
+    ctx.moveTo(leftCheek.x * width, leftCheek.y * height);
+    ctx.lineTo(rightCheek.x * width, rightCheek.y * height);
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]); // Reset dash
+
+  // 3. Key Landmark Feature Glowing Dots
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#60a5fa';
+  ctx.shadowBlur = 8;
+  [1, 33, 263, 61, 291, 152, 10, 234, 454, 168].forEach((idx) => {
+    const pt = landmarks[idx];
+    if (pt) {
+      const px = pt.x * width;
+      const py = pt.y * height;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+
+  // 4. Head Pose 3D Orientation Pointer from Nose Tip
+  if (noseTip) {
+    const nx = noseTip.x * width;
+    const ny = noseTip.y * height;
+
+    let dirOffsetX = 0;
+    let dirOffsetY = 0;
+    if (direction === 'left') dirOffsetX = -20;
+    else if (direction === 'right') dirOffsetX = 20;
+    else if (direction === 'down') dirOffsetY = 20;
+    else if (direction === 'up') dirOffsetY = -20;
+
+    // Vector line
+    ctx.strokeStyle = isDistracted ? '#ef4444' : '#10b981';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = isDistracted ? '#ef4444' : '#10b981';
+    ctx.shadowBlur = 8;
+
+    ctx.beginPath();
+    ctx.moveTo(nx, ny);
+    ctx.lineTo(nx + dirOffsetX, ny + dirOffsetY);
+    ctx.stroke();
+
+    // Target pointer circle
+    ctx.fillStyle = isDistracted ? '#ef4444' : '#10b981';
+    ctx.beginPath();
+    ctx.arc(nx + dirOffsetX, ny + dirOffsetY, 3.5, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+
+  // 5. Sci-Fi Cybernetic Bounding Box with Corner Accents
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  FACE_OVAL.forEach((idx) => {
+    const pt = landmarks[idx];
+    if (pt) {
+      if (pt.x < minX) minX = pt.x;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+  });
+
+  const padX = 12;
+  const padY = 12;
+  const bx = Math.max(0, minX * width - padX);
+  const by = Math.max(0, minY * height - padY);
+  const bw = Math.min(width - bx, (maxX - minX) * width + padX * 2);
+  const bh = Math.min(height - by, (maxY - minY) * height + padY * 2);
+  const cornerLen = 14;
+
+  ctx.strokeStyle = isDistracted ? '#ef4444' : '#6366f1';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 10;
+
+  // Top-Left Corner
+  ctx.beginPath();
+  ctx.moveTo(bx, by + cornerLen);
+  ctx.lineTo(bx, by);
+  ctx.lineTo(bx + cornerLen, by);
+  ctx.stroke();
+
+  // Top-Right Corner
+  ctx.beginPath();
+  ctx.moveTo(bx + bw - cornerLen, by);
+  ctx.lineTo(bx + bw, by);
+  ctx.lineTo(bx + bw, by + cornerLen);
+  ctx.stroke();
+
+  // Bottom-Left Corner
+  ctx.beginPath();
+  ctx.moveTo(bx, by + bh - cornerLen);
+  ctx.lineTo(bx, by + bh);
+  ctx.lineTo(bx + cornerLen, by + bh);
+  ctx.stroke();
+
+  // Bottom-Right Corner
+  ctx.beginPath();
+  ctx.moveTo(bx + bw - cornerLen, by + bh);
+  ctx.lineTo(bx + bw, by + bh);
+  ctx.lineTo(bx + bw, by + bh - cornerLen);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetricsUpdate }) => {
@@ -83,29 +277,6 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
           const canvas = canvasRef.current;
           const ctx = canvas?.getContext('2d');
 
-          // Clear transparent landmark overlay canvas
-          if (ctx && canvas) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw landmark dots
-            if (landmarks && landmarks.length > 0) {
-              ctx.fillStyle = '#818cf8';
-              ctx.shadowColor = '#6366f1';
-              ctx.shadowBlur = 4;
-
-              [1, 33, 263, 61, 291, 152, 10, 234, 454].forEach((idx) => {
-                const pt = landmarks[idx];
-                if (pt) {
-                  const px = pt.x * canvas.width;
-                  const py = pt.y * canvas.height;
-                  ctx.beginPath();
-                  ctx.arc(px, py, 3, 0, 2 * Math.PI);
-                  ctx.fill();
-                }
-              });
-            }
-          }
-
           const hasFace = !!(landmarks && landmarks.length >= 468);
           setIsFaceDetected(hasFace);
 
@@ -114,6 +285,22 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
 
           const metrics = focusCalculator.calculate(hasFace, headPose);
           metricsCallbackRef.current(metrics);
+
+          // Render Face Wireframe Mesh & Contour Lines
+          if (ctx && canvas) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (hasFace && landmarks) {
+              drawFaceMesh(
+                ctx,
+                landmarks,
+                canvas.width,
+                canvas.height,
+                metrics.isDistracted,
+                headPose.direction
+              );
+            }
+          }
         });
       } catch (err: any) {
         if (!isMounted) return;
@@ -201,7 +388,7 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ isActive, onMetric
           style={{ transform: 'scaleX(-1)' }}
         />
 
-        {/* Transparent Landmark Canvas Overlay */}
+        {/* Transparent Face Mesh Wireframe Overlay Canvas */}
         <canvas
           ref={canvasRef}
           width={320}
